@@ -1,0 +1,39 @@
+name: "Nueva funcionalidad"
+description: "Proponer una capacidad de ORBYN"
+title: "[Funcionalidad]: "
+labels: ["tipo:funcionalidad", "estado:triage"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Problema
+      description: ¿Qué necesidad concreta se debe resolver?
+    validations:
+      required: true
+  - type: textarea
+    id: resultado
+    attributes:
+      label: Resultado esperado
+      description: Describir el comportamiento observable.
+    validations:
+      required: true
+  - type: textarea
+    id: alcance
+    attributes:
+      label: Alcance y límites
+      description: Indicar qué módulos participan y qué queda fuera.
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Criterios de aceptación
+      description: Enumerar condiciones verificables.
+    validations:
+      required: true
+  - type: textarea
+    id: documentacion
+    attributes:
+      label: Documentación afectada
+    validations:
+      required: true

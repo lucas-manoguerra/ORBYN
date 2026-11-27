@@ -1,0 +1,29 @@
+name: "Propuesta arquitectónica"
+description: "Proponer o revisar una decisión de arquitectura"
+title: "[Arquitectura]: "
+labels: ["tipo:arquitectura", "estado:triage"]
+body:
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto y problema
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+    validations:
+      required: true
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta y límites de responsabilidad
+    validations:
+      required: true
+  - type: textarea
+    id: consecuencias
+    attributes:
+      label: Consecuencias, riesgos y migración
+    validations:
+      required: true
