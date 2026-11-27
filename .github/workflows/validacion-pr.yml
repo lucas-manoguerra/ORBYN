@@ -17,17 +17,17 @@ jobs:
         env:
           TITULO: ${{ github.event.pull_request.title }}
         run: |
-          printf '%s' "$TITULO" | grep -Eq '^(feat|fix|docs|refactor|test|build|ci|perf|security|revert|chore)(\\([a-z0-9._-]+\\))?: .{8,72}$'
+          printf '%s' "$TITULO" | grep -Eq '^(feat|fix|docs|refactor|test|build|ci|perf|security|revert|chore)(\([a-z0-9._-]+\))?: .{8,72}$'
   vinculacion:
     name: issue-vinculado
     runs-on: ubuntu-latest
     steps:
       - name: Exigir referencia de issue
         env:
-          ACTOR: ${{ github.actor }}
+          AUTOR: ${{ github.event.pull_request.user.login }}
           CUERPO: ${{ github.event.pull_request.body }}
         run: |
-          if [ "$ACTOR" = "dependabot[bot]" ]; then
+          if [ "$AUTOR" = "dependabot[bot]" ]; then
             echo "PR automatizada de Dependabot: no requiere issue vinculado."
             exit 0
           fi
