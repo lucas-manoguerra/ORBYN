@@ -24,8 +24,14 @@ jobs:
     steps:
       - name: Exigir referencia de issue
         env:
+          AUTOR: ${{ github.event.pull_request.user.login }}
           CUERPO: ${{ github.event.pull_request.body }}
         run: |
+          if [ "$AUTOR" = "dependabot[bot]" ]; then
+            echo "PR automatizada de Dependabot: no requiere issue vinculado."
+            exit 0
+          fi
+
           printf '%s' "$CUERPO" | grep -Eiq '(closes|fixes|resolves) #[0-9]+' || {
             echo "La PR debe vincular un issue mediante Closes #N, Fixes #N o Resolves #N."
             exit 1
