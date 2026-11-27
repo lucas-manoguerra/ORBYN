@@ -8,6 +8,7 @@ command -v gh >/dev/null
 command -v jq >/dev/null
 gh auth status
 test "$(gh api "repos/$REPO" --jq '.permissions.admin')" = "true"
+test "$(gh api "repos/$REPO" --jq '.default_branch')" = "main"
 
 gh api --method PATCH "repos/$REPO" \
   -F allow_auto_merge=true \
@@ -57,12 +58,14 @@ for branch in developer test release production; do
   fi
 done
 
-for file in "$ROOT"/.github/rulesets/*.json; do
+while IFS= read -r file; do
   name="$(jq -r '.name' "$file")"
-  existing="$(gh api --paginate "repos/$REPO/rulesets" --jq '.[].name')"
-  if ! printf '%s\n' "$existing" | grep -Fxq "$name"; then
+  existing_id="$(gh api --paginate "repos/$REPO/rulesets" --jq ".[] | select(.name == \"$name\") | .id" | head -n 1)"
+  if [ -n "$existing_id" ]; then
+    gh api --method PUT "repos/$REPO/rulesets/$existing_id" --input "$file" >/dev/null
+  else
     gh api --method POST "repos/$REPO/rulesets" --input "$file" >/dev/null
   fi
-done
+done < <(find "$ROOT/.github/rulesets" -maxdepth 1 -type f -name '*.json' | sort)
 
 printf 'Configuración de ORBYN aplicada en %s\n' "$REPO"

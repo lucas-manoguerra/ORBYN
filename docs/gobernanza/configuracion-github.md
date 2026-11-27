@@ -4,7 +4,7 @@
 
 - GitHub CLI y jq instalados.
 - Sesión autenticada con permisos administrativos sobre el repositorio.
-- Permiso de escritura de administración para crear rulesets.
+- Permiso de escritura de administración para crear o actualizar rulesets.
 - La PR de fundación integrada en main.
 
 ## Aplicación
@@ -15,7 +15,7 @@ Desde la raíz del repositorio:
 bash scripts/configurar-github.sh
 ```
 
-El script configura merge automático, squash como único método, eliminación de ramas temporales tras merge, etiquetas, milestones, ramas permanentes y rulesets. Es idempotente por nombre para etiquetas, milestones, ramas y rulesets. No elimina ramas ni reglas existentes.
+El script configura merge automático, squash como único método, actualización de ramas, eliminación de ramas temporales tras merge, etiquetas, milestones, ramas permanentes y rulesets. Actualiza rulesets existentes por nombre para reconciliar la configuración. No elimina ni modifica ramas existentes.
 
 ## Ramas
 
@@ -43,4 +43,4 @@ gh api repos/lucas-manoguerra/ORBYN/branches
 gh api repos/lucas-manoguerra/ORBYN/actions/permissions
 ```
 
-La creación de rulesets requiere permiso de administración del repositorio. Consultar la [documentación oficial de la API de reglas de GitHub](https://docs.github.com/es/rest/repos/rules).
+La creación y actualización de rulesets requiere permiso de administración del repositorio. Consultar la [documentación oficial de la API de reglas de GitHub](https://docs.github.com/es/rest/repos/rules).
