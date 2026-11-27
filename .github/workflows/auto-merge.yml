@@ -19,12 +19,11 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     steps:
-      - name: Merge eligible pull request
+      - name: Evaluate required workflows and merge
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-      - name: Evaluate required workflows and merge
         shell: bash
         run: |
           set -euo pipefail
