@@ -7,12 +7,9 @@ fn main() -> iced::Result {
         .run()
 }
 
-#[derive(Debug, Clone)]
-enum Message {}
+fn update(_state: &mut App, _message: ()) {}
 
-fn update(_state: &mut App, _message: Message) {}
-
-fn view(_state: &App) -> Element<'_, Message> {
+fn view(_state: &App) -> Element<'_, ()> {
     let content = column![
         text("ORBYN").size(38),
         text("Plataforma de colaboración humana y agentes").size(18),

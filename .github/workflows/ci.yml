@@ -2,19 +2,9 @@ name: Calidad continua
 
 on:
   pull_request:
-    branches:
-      - developer
-      - test
-      - release
-      - main
-      - production
+    branches: [developer, test, release, main, production]
   push:
-    branches:
-      - developer
-      - test
-      - release
-      - main
-      - production
+    branches: [developer, test, release, main, production]
   workflow_dispatch:
 
 permissions:
@@ -34,6 +24,18 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+
+  codigo-sin-comentarios:
+    name: codigo-sin-comentarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar política de cero comentarios
+        run: |
+          if grep -RInE '(^|[[:space:]])//|/\*|\*/' --include='*.rs' apps crates; then
+            echo "Se encontraron comentarios en código Rust. Documentar decisiones fuera del código."
+            exit 1
+          fi
 
   compilacion:
     name: compilacion
