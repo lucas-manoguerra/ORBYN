@@ -1,7 +1,10 @@
 use clap::Parser;
 
 #[derive(Debug, Parser)]
-#[command(name = "orbyn-node", about = "Nodo de ejecución local o remoto de ORBYN")]
+#[command(
+    name = "orbyn-node",
+    about = "Nodo de ejecución local o remoto de ORBYN"
+)]
 struct Args {
     #[arg(long, env = "ORBYN_CONTROL_URL")]
     control_url: Option<String>,

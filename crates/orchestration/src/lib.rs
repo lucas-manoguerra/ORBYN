@@ -62,15 +62,16 @@ impl WorkflowDefinition {
             }
         }
 
-        let mut indegree: HashMap<Uuid, usize> =
-            ids.iter().map(|id| (*id, 0)).collect();
+        let mut indegree: HashMap<Uuid, usize> = ids.iter().map(|id| (*id, 0)).collect();
         let mut outgoing: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
 
         for edge in &self.edges {
             if !ids.contains(&edge.from) || !ids.contains(&edge.to) {
                 return Err(ValidationError::MissingNode);
             }
-            *indegree.get_mut(&edge.to).ok_or(ValidationError::MissingNode)? += 1;
+            *indegree
+                .get_mut(&edge.to)
+                .ok_or(ValidationError::MissingNode)? += 1;
             outgoing.entry(edge.from).or_default().push(edge.to);
         }
 
@@ -84,7 +85,9 @@ impl WorkflowDefinition {
             visited += 1;
             if let Some(next) = outgoing.get(&id) {
                 for target in next {
-                    let degree = indegree.get_mut(target).ok_or(ValidationError::MissingNode)?;
+                    let degree = indegree
+                        .get_mut(target)
+                        .ok_or(ValidationError::MissingNode)?;
                     *degree -= 1;
                     if *degree == 0 {
                         ready.push(*target);

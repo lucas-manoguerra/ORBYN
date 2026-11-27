@@ -42,11 +42,17 @@ pub trait AgentExecutor: Send + Sync {
 #[async_trait]
 pub trait ModelProvider: Send + Sync {
     fn provider_id(&self) -> &'static str;
-    async fn complete(&self, model: &str, input: serde_json::Value) -> Result<serde_json::Value, RuntimeError>;
+
+    async fn complete(
+        &self,
+        model: &str,
+        input: serde_json::Value,
+    ) -> Result<serde_json::Value, RuntimeError>;
 }
 
 #[async_trait]
 pub trait ToolProvider: Send + Sync {
     fn tool_id(&self) -> &'static str;
+
     async fn invoke(&self, input: serde_json::Value) -> Result<serde_json::Value, RuntimeError>;
 }

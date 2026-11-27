@@ -22,6 +22,13 @@ pub enum IntegrationError {
 
 #[async_trait]
 pub trait SourceControlProvider: Send + Sync {
-    async fn list_branches(&self, repository: &RepositoryRef) -> Result<Vec<String>, IntegrationError>;
-    async fn current_revision(&self, repository: &RepositoryRef) -> Result<Option<String>, IntegrationError>;
+    async fn list_branches(
+        &self,
+        repository: &RepositoryRef,
+    ) -> Result<Vec<String>, IntegrationError>;
+
+    async fn current_revision(
+        &self,
+        repository: &RepositoryRef,
+    ) -> Result<Option<String>, IntegrationError>;
 }

@@ -24,7 +24,6 @@ license = "Apache-2.0"
 anyhow = "1"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["ws", "macros"] }
-chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 iced = { version = "0.13", features = ["tokio", "svg", "image"] }
 serde = { version = "1", features = ["derive"] }

@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -7,7 +6,7 @@ pub struct Room {
     pub id: Uuid,
     pub project_id: Uuid,
     pub name: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at_unix_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,7 +15,7 @@ pub struct RoomMessage {
     pub room_id: Uuid,
     pub author_id: Uuid,
     pub body: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at_unix_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
