@@ -33,6 +33,9 @@
             "context": "codigo-sin-comentarios"
           },
           {
+            "context": "arquitectura"
+          },
+          {
             "context": "compilacion"
           },
           {
@@ -55,6 +58,9 @@
           },
           {
             "context": "issue-vinculado"
+          },
+          {
+            "context": "analizar-rust"
           }
         ]
       }
