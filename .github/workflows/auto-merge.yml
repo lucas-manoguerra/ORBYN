@@ -1,0 +1,61 @@
+name: Auto-merge
+
+on:
+  workflow_run:
+    workflows: ["CI", "Security"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: auto-merge-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  merge-when-all-checks-pass:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Merge eligible pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      - name: Evaluate required workflows and merge
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          runs="$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${HEAD_SHA}&per_page=100" --jq '
+            [.workflow_runs[]
+              | select(.name == "CI" or .name == "Security")
+              | {name, status, conclusion, created_at}]
+            | sort_by(.created_at)
+            | group_by(.name)
+            | map(.[-1])
+          ')"
+
+          echo "$runs"
+
+          if ! jq -e '
+            length == 2 and
+            all(.[]; .status == "completed" and .conclusion == "success") and
+            any(.[]; .name == "CI") and
+            any(.[]; .name == "Security")
+          ' <<< "$runs" >/dev/null; then
+            echo "CI and Security have not both completed successfully for this head SHA."
+            exit 0
+          fi
+
+          prs="$(gh pr list --repo "$REPOSITORY" --state open --json number,headRefOid --limit 100)"
+          pr_number="$(jq -r --arg sha "$HEAD_SHA" '[.[] | select(.headRefOid == $sha)] | first | .number // empty' <<< "$prs")"
+
+          if [[ -z "$pr_number" ]]; then
+            echo "No open pull request matches this exact head SHA."
+            exit 0
+          fi
+
+          gh pr merge "$pr_number" --repo "$REPOSITORY" --squash --delete-branch
