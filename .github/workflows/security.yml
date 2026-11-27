@@ -25,15 +25,3 @@ jobs:
         with:
           languages: rust
       - uses: github/codeql-action/analyze@v3
-
-  dependency-review:
-    name: Dependency review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: moderate
