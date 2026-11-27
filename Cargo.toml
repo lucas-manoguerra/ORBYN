@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [
+  "apps/desktop",
+  "apps/server",
+  "apps/node",
+  "crates/domain",
+  "crates/events",
+  "crates/orchestration",
+  "crates/runtime",
+  "crates/governance",
+  "crates/identity",
+  "crates/collaboration",
+  "crates/integrations",
+  "crates/storage",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["ws", "macros"] }
+clap = { version = "4", features = ["derive", "env"] }
+iced = { version = "0.13", features = ["tokio", "svg", "image"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+todo = "deny"
+unimplemented = "deny"
+panic = "deny"

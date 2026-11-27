@@ -1,0 +1,34 @@
+name: "Reporte de error"
+description: "Informar un comportamiento incorrecto"
+title: "[Error]: "
+body:
+  - type: textarea
+    id: resumen
+    attributes:
+      label: Resumen
+    validations:
+      required: true
+  - type: textarea
+    id: reproducir
+    attributes:
+      label: Pasos para reproducir
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: Resultado esperado
+    validations:
+      required: true
+  - type: textarea
+    id: obtenido
+    attributes:
+      label: Resultado obtenido
+    validations:
+      required: true
+  - type: input
+    id: entorno
+    attributes:
+      label: Entorno y versión
+    validations:
+      required: true

@@ -1,0 +1,32 @@
+name: Validación de Pull Request
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  titulo:
+    name: titulo-pr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar título
+        env:
+          TITULO: ${{ github.event.pull_request.title }}
+        run: |
+          printf '%s' "$TITULO" | grep -Eq '^(feat|fix|docs|refactor|test|build|ci|perf|security|revert|chore)(\([a-z0-9._-]+\))?: .{8,72}$'
+  vinculacion:
+    name: issue-vinculado
+    runs-on: ubuntu-latest
+    steps:
+      - name: Exigir referencia de issue
+        env:
+          CUERPO: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$CUERPO" | grep -Eiq '(closes|fixes|resolves) #[0-9]+' || {
+            echo "La PR debe vincular un issue mediante Closes #N, Fixes #N o Resolves #N."
+            exit 1
+          }
