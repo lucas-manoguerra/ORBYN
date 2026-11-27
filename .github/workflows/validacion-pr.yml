@@ -17,7 +17,7 @@ jobs:
         env:
           TITULO: ${{ github.event.pull_request.title }}
         run: |
-          printf '%s' "$TITULO" | grep -Eq '^(feat|fix|docs|refactor|test|build|ci|perf|security|revert|chore)(\\([a-z0-9._-]+\\))?: .{8,72}$'
+          printf '%s' "$TITULO" | grep -Eq '^(feat|fix|docs|refactor|test|build|ci|perf|security|revert|chore)(\([a-z0-9._-]+\))?: .{8,72}$'
   vinculacion:
     name: issue-vinculado
     runs-on: ubuntu-latest
