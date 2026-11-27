@@ -1,0 +1,15 @@
+name-template: "ORBYN $RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+template: |
+  ## Cambios
+
+  $CHANGES
+
+  ## Colaboradores
+
+  $CONTRIBUTORS
+
+  ---
+  Las notas se generan automáticamente a partir de Pull Requests fusionadas.
+  Este borrador no se publica sin intervención explícita.
