@@ -293,10 +293,7 @@ mod tests {
 
     #[test]
     fn name_rejects_values_longer_than_one_hundred_characters() {
-        assert_eq!(
-            Name::new("a".repeat(101)),
-            Err(DomainError::InvalidName)
-        );
+        assert_eq!(Name::new("a".repeat(101)), Err(DomainError::InvalidName));
     }
 
     #[test]
@@ -333,12 +330,7 @@ mod tests {
     fn membership_keeps_its_organization_role() {
         let organization_id = OrganizationId(Uuid::new_v4());
         let user_id = UserId(Uuid::new_v4());
-        let membership = Membership::new(
-            organization_id,
-            user_id,
-            MembershipRole::Admin,
-            1_000,
-        );
+        let membership = Membership::new(organization_id, user_id, MembershipRole::Admin, 1_000);
 
         assert_eq!(
             membership.map(|value| (value.role(), value.user_id())),
