@@ -1,7 +1,6 @@
 name: "Reporte de error"
 description: "Informar un comportamiento incorrecto"
 title: "[Error]: "
-labels: ["tipo:error", "estado:triage"]
 body:
   - type: textarea
     id: resumen
