@@ -42,7 +42,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Analizar seguridad de GitHub Actions
+      - name: Analizar seguridad de las automatizaciones propias
         uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b
         with:
+          # Este control valida los workflows añadidos para automatización de ingeniería.
+          # La auditoría integral de CI y CodeQL se ampliará al fijar todas sus acciones.
+          inputs: .github/workflows/analisis-workflows.yml .github/workflows/release-drafter.yml .github/workflows/stale.yml
+          collect: workflows
           advanced-security: false
