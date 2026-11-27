@@ -280,9 +280,7 @@ mod tests {
 
     #[test]
     fn name_trims_surrounding_whitespace() {
-        let name = Name::new("  ORBYN  ").expect("nombre válido");
-
-        assert_eq!(name.as_str(), "ORBYN");
+        assert_eq!(Name::new("  ORBYN  ").map(|name| name.as_str().to_owned()), Ok("ORBYN".to_owned()));
     }
 
     #[test]
@@ -301,10 +299,9 @@ mod tests {
     #[test]
     fn organization_creates_a_typed_identity() {
         let owner = UserId(Uuid::new_v4());
-        let organization = Organization::new("Equipo", owner, 1_000).expect("organización válida");
+        let organization = Organization::new("Equipo", owner, 1_000);
 
-        assert_eq!(organization.owner_user_id(), owner);
-        assert_eq!(organization.name().as_str(), "Equipo");
+        assert_eq!(organization.map(|value| (value.owner_user_id(), value.name().as_str().to_owned())), Ok((owner, "Equipo".to_owned())));
     }
 
     #[test]
@@ -318,9 +315,9 @@ mod tests {
     #[test]
     fn team_belongs_to_an_organization() {
         let organization_id = OrganizationId(Uuid::new_v4());
-        let team = Team::new(organization_id, "Backend", 1_000).expect("equipo válido");
+        let team = Team::new(organization_id, "Backend", 1_000);
 
-        assert_eq!(team.organization_id(), organization_id);
+        assert_eq!(team.map(|value| value.organization_id()), Ok(organization_id));
     }
 
     #[test]
@@ -332,11 +329,9 @@ mod tests {
             user_id,
             MembershipRole::Admin,
             1_000,
-        )
-        .expect("membresía válida");
+        );
 
-        assert_eq!(membership.role(), MembershipRole::Admin);
-        assert_eq!(membership.user_id(), user_id);
+        assert_eq!(membership.map(|value| (value.role(), value.user_id())), Ok((MembershipRole::Admin, user_id)));
     }
 
     #[test]
