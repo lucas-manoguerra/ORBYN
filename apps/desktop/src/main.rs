@@ -4,7 +4,7 @@ use iced::{Element, Length, Theme};
 fn main() -> iced::Result {
     iced::application(App::default, update, view)
         .title("ORBYN")
-        .theme(|_| Theme::Dark)
+        .theme(|_: &App| Theme::Dark)
         .run()
 }
 
