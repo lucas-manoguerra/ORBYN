@@ -79,6 +79,8 @@ impl SessionRecord {
         if self.revoked_at_unix_ms.is_some()
             || now_unix_ms >= self.refresh_expires_at_unix_ms
             || now_unix_ms >= self.absolute_expires_at_unix_ms
+            || replacement.access_expires_at_unix_ms <= now_unix_ms
+            || replacement.refresh_expires_at_unix_ms <= now_unix_ms
             || replacement.access_expires_at_unix_ms > self.absolute_expires_at_unix_ms
         { return false; }
         let refresh_expiry = replacement.refresh_expires_at_unix_ms.min(self.absolute_expires_at_unix_ms);
@@ -307,6 +309,7 @@ where
         &self,
         access_credential: &str,
     ) -> Result<Option<AuthenticatedPrincipal>, SessionError> {
+        if access_credential.is_empty() { return Ok(None); }
         let digest = self.credentials.digest(access_credential)
             .map_err(|_| SessionError::CredentialProvider)?;
         if digest.is_empty() { return Err(SessionError::InvalidCredentialDigest); }
@@ -322,6 +325,7 @@ where
         let now = self.clock.now_unix_ms();
         if now < 0 { return Err(SessionError::InvalidTimestamp); }
 
+        if refresh_credential.is_empty() { return Ok(SessionRotationOutcome::Invalid); }
         let presented_digest = self.credentials.digest(refresh_credential)
             .map_err(|_| SessionError::CredentialProvider)?;
         if presented_digest.is_empty() { return Err(SessionError::InvalidCredentialDigest); }
@@ -517,7 +521,9 @@ mod tests {
 
     #[tokio::test]
     async fn creates_session_and_authenticates_principal() {
-        let Some((app, _)) = application() else { assert!(false, "valid policy must construct"); return; };
+        let app_result = application();
+        assert!(app_result.is_some());
+        let Some((app, _)) = app_result else { return; };
         let issued = app.create(user_id()).await;
         assert!(issued.is_ok());
         if let Ok(issued) = issued {
@@ -528,13 +534,15 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_expired_access_credentials() {
-        let Some((app, clock)) = application() else { assert!(false, "valid policy must construct"); return; };
+        let app_result = application();
+        assert!(app_result.is_some());
+        let Some((app, clock)) = app_result else { return; };
         let issued = app.create(user_id()).await;
         if let Ok(issued) = issued {
             clock.set(1_100);
             assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
         } else {
-            assert!(false, "session creation should succeed");
+            assert!(issued.is_ok());
         }
     }
 
