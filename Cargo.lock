@@ -2657,6 +2657,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "orbyn-domain",
+ "orbyn-identity",
  "thiserror 2.0.21",
  "tokio",
  "uuid",
