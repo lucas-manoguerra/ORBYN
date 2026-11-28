@@ -9,8 +9,9 @@ workspace = true
 
 [dependencies]
 async-trait.workspace = true
-orbyn-domain = { path = "../domain" }
+orbyn-domain = { version = "0.1.0", path = "../domain" }
 thiserror.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+uuid.workspace = true
