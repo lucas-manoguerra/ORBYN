@@ -73,7 +73,6 @@ where
     }
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ExternalIdentityRepositoryError {
     #[error("La identidad externa ya está vinculada")]
@@ -354,9 +353,7 @@ mod tests {
 
         assert!(matches!(linked, Ok(identity) if identity.user_id() == user_id));
 
-        let found = application
-            .find(IdentityProvider::GitHub, "987654")
-            .await;
+        let found = application.find(IdentityProvider::GitHub, "987654").await;
 
         assert!(matches!(found, Ok(Some(identity)) if identity.user_id() == user_id));
     }
