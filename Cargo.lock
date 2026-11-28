@@ -2637,6 +2637,7 @@ dependencies = [
 name = "orbyn-identity"
 version = "0.1.0"
 dependencies = [
+ "orbyn-domain",
  "serde",
  "uuid",
 ]
