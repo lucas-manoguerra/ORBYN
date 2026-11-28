@@ -2,8 +2,9 @@ use iced::widget::{column, container, text};
 use iced::{Element, Length, Theme};
 
 fn main() -> iced::Result {
-    iced::application("ORBYN", update, view)
-        .theme(|_| Theme::Dark)
+    iced::application(App::default, update, view)
+        .title("ORBYN")
+        .theme(|_: &App| Theme::Dark)
         .run()
 }
 
