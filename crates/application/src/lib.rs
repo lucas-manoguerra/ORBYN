@@ -157,13 +157,11 @@ mod tests {
             .map_err(|error| error.to_string());
 
         assert!(created.is_ok());
-        let organization = match created {
-            Ok(organization) => organization,
-            Err(error) => panic!("{error}"),
-        };
 
-        let found = application.find(organization.id()).await;
-        assert_eq!(found, Ok(Some(organization)));
+        if let Ok(organization) = created {
+            let found = application.find(organization.id()).await;
+            assert!(matches!(found, Ok(Some(found)) if found == organization));
+        }
     }
 
     #[tokio::test]
