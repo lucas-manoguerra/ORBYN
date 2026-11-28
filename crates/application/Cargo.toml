@@ -12,7 +12,7 @@ async-trait.workspace = true
 orbyn-domain = { version = "0.1.0", path = "../domain" }
 orbyn-identity = { version = "0.1.0", path = "../identity" }
 thiserror.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
-uuid.workspace = true
