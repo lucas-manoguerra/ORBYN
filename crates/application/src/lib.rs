@@ -152,9 +152,9 @@ where
     }
 }
 
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ExternalAccountProvisioningRepositoryError {
+    #[error("El almacenamiento de cuentas externas no está disponible")]
     Unavailable,
 }
 
@@ -512,7 +512,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod external_account_provisioning_tests {
     use super::*;
@@ -525,14 +524,13 @@ mod external_account_provisioning_tests {
     }
 
     #[async_trait]
-    impl ExternalAccountProvisioningRepository
-        for InMemoryExternalAccountProvisioningRepository
-    {
+    impl ExternalAccountProvisioningRepository for InMemoryExternalAccountProvisioningRepository {
         async fn resolve_or_create(
             &self,
             candidate_user: User,
             candidate_identity: ExternalIdentity,
-        ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningRepositoryError> {
+        ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningRepositoryError>
+        {
             let mut accounts = self
                 .accounts
                 .lock()
@@ -540,8 +538,7 @@ mod external_account_provisioning_tests {
 
             if let Some((user, identity)) = accounts.iter().find(|(_, identity)| {
                 identity.provider() == candidate_identity.provider()
-                    && identity.external_account_id()
-                        == candidate_identity.external_account_id()
+                    && identity.external_account_id() == candidate_identity.external_account_id()
             }) {
                 return Ok(ProvisionedExternalAccount {
                     user: user.clone(),
@@ -563,14 +560,13 @@ mod external_account_provisioning_tests {
     struct FailingExternalAccountProvisioningRepository;
 
     #[async_trait]
-    impl ExternalAccountProvisioningRepository
-        for FailingExternalAccountProvisioningRepository
-    {
+    impl ExternalAccountProvisioningRepository for FailingExternalAccountProvisioningRepository {
         async fn resolve_or_create(
             &self,
             _candidate_user: User,
             _candidate_identity: ExternalIdentity,
-        ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningRepositoryError> {
+        ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningRepositoryError>
+        {
             Err(ExternalAccountProvisioningRepositoryError::Unavailable)
         }
     }
@@ -696,10 +692,9 @@ mod external_account_provisioning_tests {
 
     #[tokio::test]
     async fn translates_repository_failures() {
-        let application =
-            ExternalAccountProvisioningApplication::new(
-                FailingExternalAccountProvisioningRepository,
-            );
+        let application = ExternalAccountProvisioningApplication::new(
+            FailingExternalAccountProvisioningRepository,
+        );
 
         let result = application.resolve_or_create(command()).await;
 
