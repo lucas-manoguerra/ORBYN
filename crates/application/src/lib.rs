@@ -161,9 +161,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_invalid_domain_data_before_persisting() {
-        let application = OrganizationApplication::new(
-            InMemoryOrganizationRepository::default(),
-        );
+        let application = OrganizationApplication::new(InMemoryOrganizationRepository::default());
         let mut invalid_command = command(UserId(Uuid::new_v4()));
         invalid_command.name = "  ".to_owned();
 
