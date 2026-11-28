@@ -103,29 +103,3 @@ jobs:
       - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  bootstrap-lock:
-    name: bootstrap-lock
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.head_ref }}
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Generar y versionar lockfile
-        env:
-          BRANCH: ${{ github.head_ref }}
-        run: |
-          cargo generate-lockfile
-          if [ -z "$(git status --short -- Cargo.lock)" ]; then
-            echo "Cargo.lock ya está actualizado"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.lock
-          git commit -m "build: incorporar Cargo.lock"
-          git push origin "HEAD:${BRANCH}"
