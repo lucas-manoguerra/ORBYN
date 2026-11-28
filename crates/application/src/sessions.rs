@@ -139,9 +139,6 @@ impl SessionPolicy {
     }
 }
 
-/// Producción debe implementar generación con CSPRNG y un digest criptográfico.
-/// Para secretos aleatorios de alta entropía, un hash rápido (p. ej. SHA-256
-/// con separación de dominio) es apropiado; nunca usar un PRNG casero.
 pub trait CredentialProvider: Send + Sync {
     fn generate(&self) -> Result<String, CredentialProviderError>;
     fn digest(&self, credential: &str) -> Result<Vec<u8>, CredentialProviderError>;
@@ -220,18 +217,12 @@ pub enum SessionError {
 pub trait SessionRepository: Send + Sync {
     async fn insert(&self, session: SessionRecord) -> Result<(), SessionRepositoryError>;
 
-    /// Verifica digest, revocación y expiración en una sola operación.
     async fn authenticate_access(
         &self,
         access_digest: &[u8],
         now_unix_ms: i64,
     ) -> Result<Option<UserId>, SessionRepositoryError>;
 
-    /// Operación transaccional indivisible. El adaptador debe localizar el
-    /// digest vigente, guardar el anterior como consumido y sustituir ambos
-    /// digests. Si el digest ya fue consumido, revoca toda la familia. La
-    /// detección de repetición y la revocación deben compartir la transacción.
-    /// La expiración absoluta nunca puede extenderse con una rotación.
     async fn rotate_refresh(
         &self,
         presented_digest: &[u8],
@@ -239,7 +230,6 @@ pub trait SessionRepository: Send + Sync {
         now_unix_ms: i64,
     ) -> Result<RepositoryRotationResult, SessionRepositoryError>;
 
-    /// Revoca la sesión y su familia de renovación de forma atómica.
     async fn revoke(
         &self,
         session_id: SessionId,
