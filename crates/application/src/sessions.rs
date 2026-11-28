@@ -18,7 +18,9 @@ impl SessionId {
 pub struct SessionFamilyId(Uuid);
 
 impl SessionFamilyId {
-    pub fn as_uuid(self) -> Uuid { self.0 }
+    pub fn as_uuid(self) -> Uuid {
+        self.0
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -373,7 +375,9 @@ where
             return Ok(None);
         }
         let now = self.clock.now_unix_ms();
-        if now < 0 { return Err(SessionError::InvalidTimestamp); }
+        if now < 0 {
+            return Err(SessionError::InvalidTimestamp);
+        }
         let digest = self
             .credentials
             .digest(access_credential)
@@ -394,7 +398,9 @@ where
         refresh_credential: &str,
     ) -> Result<SessionRotationOutcome, SessionError> {
         let now = self.clock.now_unix_ms();
-        if now < 0 { return Err(SessionError::InvalidTimestamp); }
+        if now < 0 {
+            return Err(SessionError::InvalidTimestamp);
+        }
 
         if refresh_credential.is_empty() {
             return Ok(SessionRotationOutcome::Invalid);
@@ -403,7 +409,9 @@ where
             .credentials
             .digest(refresh_credential)
             .map_err(|_| SessionError::CredentialProvider)?;
-        if presented_digest.is_empty() { return Err(SessionError::InvalidCredentialDigest); }
+        if presented_digest.is_empty() {
+            return Err(SessionError::InvalidCredentialDigest);
+        }
 
         let access = self.new_credential()?;
         let refresh = self.new_credential()?;
@@ -438,7 +446,9 @@ where
 
     pub async fn revoke(&self, session_id: SessionId) -> Result<bool, SessionError> {
         let now = self.clock.now_unix_ms();
-        if now < 0 { return Err(SessionError::InvalidTimestamp); }
+        if now < 0 {
+            return Err(SessionError::InvalidTimestamp);
+        }
         self.repository
             .revoke(session_id, now)
             .await
@@ -697,7 +707,9 @@ mod tests {
         let Some((app, clock)) = result else {
             return;
         };
-        let Some(issued) = create_session(&app).await else { return; };
+        let Some(issued) = create_session(&app).await else {
+            return;
+        };
         clock.set(1_100);
         assert!(matches!(
             app.authenticate(issued.access_credential.expose_once())
@@ -710,8 +722,12 @@ mod tests {
     async fn rotates_credentials_and_invalidates_the_previous_access_token() {
         let result = application();
         assert!(result.is_some());
-        let Some((app, _)) = result else { return; };
-        let Some(issued) = create_session(&app).await else { return; };
+        let Some((app, _)) = result else {
+            return;
+        };
+        let Some(issued) = create_session(&app).await else {
+            return;
+        };
         let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
         assert!(matches!(rotated, Ok(SessionRotationOutcome::Rotated(_))));
         let Ok(SessionRotationOutcome::Rotated(next)) = rotated else {
@@ -732,11 +748,17 @@ mod tests {
     async fn refresh_reuse_revokes_the_entire_session_family() {
         let result = application();
         assert!(result.is_some());
-        let Some((app, _)) = result else { return; };
-        let Some(issued) = create_session(&app).await else { return; };
+        let Some((app, _)) = result else {
+            return;
+        };
+        let Some(issued) = create_session(&app).await else {
+            return;
+        };
         let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
         assert!(matches!(rotated, Ok(SessionRotationOutcome::Rotated(_))));
-        let Ok(SessionRotationOutcome::Rotated(next)) = rotated else { return; };
+        let Ok(SessionRotationOutcome::Rotated(next)) = rotated else {
+            return;
+        };
         assert!(matches!(
             app.rotate(issued.refresh_credential.expose_once()).await,
             Ok(SessionRotationOutcome::ReuseDetected)
@@ -751,8 +773,12 @@ mod tests {
     async fn concurrent_refresh_attempts_detect_reuse_and_revoke_the_family() {
         let result = application();
         assert!(result.is_some());
-        let Some((app, _)) = result else { return; };
-        let Some(issued) = create_session(&app).await else { return; };
+        let Some((app, _)) = result else {
+            return;
+        };
+        let Some(issued) = create_session(&app).await else {
+            return;
+        };
         let credential = issued.refresh_credential.expose_once().to_owned();
         let (first, second) = tokio::join!(app.rotate(&credential), app.rotate(&credential));
         let outcomes = [first, second];
@@ -772,8 +798,12 @@ mod tests {
     async fn revoke_invalidates_access_and_refresh_credentials() {
         let result = application();
         assert!(result.is_some());
-        let Some((app, _)) = result else { return; };
-        let Some(issued) = create_session(&app).await else { return; };
+        let Some((app, _)) = result else {
+            return;
+        };
+        let Some(issued) = create_session(&app).await else {
+            return;
+        };
         assert!(matches!(app.revoke(issued.session_id).await, Ok(true)));
         assert!(matches!(
             app.authenticate(issued.access_credential.expose_once())
