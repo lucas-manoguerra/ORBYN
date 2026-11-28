@@ -8,7 +8,7 @@
   "orbyn-orchestration": [],
   "orbyn-runtime": [],
   "orbyn-governance": [],
-  "orbyn-identity": [],
+  "orbyn-identity": ["orbyn-domain"],
   "orbyn-collaboration": [],
   "orbyn-integrations": [],
   "orbyn-storage": []
