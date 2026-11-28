@@ -74,6 +74,22 @@ impl SessionRecord {
     pub fn refresh_expires_at_unix_ms(&self) -> i64 { self.refresh_expires_at_unix_ms }
     pub fn absolute_expires_at_unix_ms(&self) -> i64 { self.absolute_expires_at_unix_ms }
     pub fn revoked_at_unix_ms(&self) -> Option<i64> { self.revoked_at_unix_ms }
+
+    pub fn apply_rotation(&mut self, replacement: SessionCredentialRotation, now_unix_ms: i64) -> bool {
+        if self.revoked_at_unix_ms.is_some()
+            || now_unix_ms >= self.refresh_expires_at_unix_ms
+            || now_unix_ms >= self.absolute_expires_at_unix_ms
+            || replacement.access_expires_at_unix_ms > self.absolute_expires_at_unix_ms
+        { return false; }
+        let refresh_expiry = replacement.refresh_expires_at_unix_ms.min(self.absolute_expires_at_unix_ms);
+        if refresh_expiry < replacement.access_expires_at_unix_ms { return false; }
+        self.digests = replacement.digests;
+        self.access_expires_at_unix_ms = replacement.access_expires_at_unix_ms;
+        self.refresh_expires_at_unix_ms = refresh_expiry;
+        true
+    }
+
+    pub fn revoke_at(&mut self, now_unix_ms: i64) { self.revoked_at_unix_ms = Some(now_unix_ms); }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +112,10 @@ impl SessionCredentialRotation {
         }
         Ok(Self { digests, access_expires_at_unix_ms, refresh_expires_at_unix_ms })
     }
+
+    pub fn digests(&self) -> &CredentialDigests { &self.digests }
+    pub fn access_expires_at_unix_ms(&self) -> i64 { self.access_expires_at_unix_ms }
+    pub fn refresh_expires_at_unix_ms(&self) -> i64 { self.refresh_expires_at_unix_ms }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -385,7 +405,6 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
     struct StoredSession {
         record: SessionRecord,
         consumed_refresh_digests: Vec<Vec<u8>>,
@@ -442,11 +461,7 @@ mod tests {
 
                 stored.consumed_refresh_digests.push(presented_digest.to_vec());
                 let mut updated = record.clone();
-                updated.digests = replacement.digests;
-                updated.access_expires_at_unix_ms = replacement.access_expires_at_unix_ms;
-                updated.refresh_expires_at_unix_ms = replacement.refresh_expires_at_unix_ms
-                    .min(record.absolute_expires_at_unix_ms);
-                if updated.refresh_expires_at_unix_ms < updated.access_expires_at_unix_ms {
+                if !updated.apply_rotation(replacement, now_unix_ms) {
                     return Ok(RepositoryRotationResult::Invalid);
                 }
                 stored.record = updated.clone();
@@ -459,7 +474,7 @@ mod tests {
 
             if let Some(family_id) = reused_family {
                 for stored in sessions.values_mut().filter(|stored| stored.record.family_id == family_id) {
-                    stored.record.revoked_at_unix_ms = Some(now_unix_ms);
+                    stored.record.revoke_at(now_unix_ms);
                 }
                 return Ok(RepositoryRotationResult::ReuseDetected);
             }
@@ -483,10 +498,10 @@ mod tests {
         }
     }
 
-    fn application() -> (
+    fn application() -> Option<(
         SessionApplication<InMemorySessionRepository, TestClock, TestCredentials>,
         TestClock,
-    ) {
+    )> {
         let clock = TestClock::default();
         clock.set(1_000);
         let app = SessionApplication::new(
@@ -495,17 +510,14 @@ mod tests {
             TestCredentials::default(),
             SessionPolicy { access_lifetime_ms: 100, refresh_lifetime_ms: 500, absolute_lifetime_ms: 1_000 },
         );
-        match app {
-            Ok(app) => (app, clock),
-            Err(_) => unreachable!(),
-        }
+        app.ok().map(|app| (app, clock))
     }
 
     fn user_id() -> UserId { UserId(Uuid::from_u128(42)) }
 
     #[tokio::test]
     async fn creates_session_and_authenticates_principal() {
-        let (app, _) = application();
+        let Some((app, _)) = application() else { assert!(false, "valid policy must construct"); return; };
         let issued = app.create(user_id()).await;
         assert!(issued.is_ok());
         if let Ok(issued) = issued {
@@ -516,7 +528,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_expired_access_credentials() {
-        let (app, clock) = application();
+        let Some((app, clock)) = application() else { assert!(false, "valid policy must construct"); return; };
         let issued = app.create(user_id()).await;
         if let Ok(issued) = issued {
             clock.set(1_100);
