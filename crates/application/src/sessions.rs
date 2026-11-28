@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use orbyn_domain::UserId;
 use orbyn_identity::AuthenticatedPrincipal;
-use std::{collections::HashMap, fmt, sync::Mutex};
+use std::fmt;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -384,7 +384,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, atomic::{AtomicI64, AtomicUsize, Ordering}};
+    use std::{collections::HashMap, sync::{Mutex, Arc, atomic::{AtomicI64, AtomicUsize, Ordering}}};
 
     #[derive(Clone, Default)]
     struct TestClock(Arc<AtomicI64>);
