@@ -1,0 +1,17 @@
+[package]
+name = "orbyn-application"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+orbyn-domain = { version = "0.1.0", path = "../domain" }
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+uuid.workspace = true
