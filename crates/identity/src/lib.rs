@@ -3,17 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt};
 use uuid::Uuid;
 
-/// The external system that verified an account identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IdentityProvider {
     GitHub,
 }
 
-/// A stable account identifier issued by an external identity provider.
-///
-/// This is not a username: usernames can change, while provider account IDs
-/// are the stable subject used to link an external account to an ORBYN user.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ExternalAccountId(String);
@@ -52,11 +47,6 @@ impl From<ExternalAccountId> for String {
     }
 }
 
-/// An identity assertion established by a trusted provider adapter.
-///
-/// Construct this value only after the provider has verified the external
-/// account. OAuth tokens, authorization codes and client secrets deliberately
-/// do not belong in this model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ExternalIdentity {
     id: Uuid,
@@ -114,10 +104,6 @@ impl ExternalIdentity {
     }
 }
 
-/// Identity of the user authenticated by the server.
-///
-/// It carries no client-supplied roles or permissions. Authorization remains
-/// the responsibility of the application use case and its domain policies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AuthenticatedPrincipal {
     user_id: UserId,
@@ -165,7 +151,10 @@ mod tests {
     fn external_account_id_trims_surrounding_whitespace() {
         let result = ExternalAccountId::new("  123456  ");
 
-        assert_eq!(result.map(|id| id.as_str().to_owned()), Ok("123456".to_owned()));
+        assert_eq!(
+            result.map(|id| id.as_str().to_owned()),
+            Ok("123456".to_owned())
+        );
     }
 
     #[test]
