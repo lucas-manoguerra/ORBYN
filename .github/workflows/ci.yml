@@ -120,7 +120,7 @@ jobs:
           BRANCH: ${{ github.head_ref }}
         run: |
           cargo generate-lockfile
-          if git diff --quiet -- Cargo.lock; then
+          if [ -z "$(git status --short -- Cargo.lock)" ]; then
             echo "Cargo.lock ya está actualizado"
             exit 0
           fi
