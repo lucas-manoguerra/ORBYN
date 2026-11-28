@@ -152,6 +152,110 @@ where
     }
 }
 
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalAccountProvisioningRepositoryError {
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvisionedExternalAccount {
+    user: User,
+    identity: ExternalIdentity,
+    created: bool,
+}
+
+impl ProvisionedExternalAccount {
+    pub fn user(&self) -> &User {
+        &self.user
+    }
+
+    pub fn identity(&self) -> &ExternalIdentity {
+        &self.identity
+    }
+
+    pub fn created(&self) -> bool {
+        self.created
+    }
+}
+
+#[async_trait]
+pub trait ExternalAccountProvisioningRepository: Send + Sync {
+    async fn resolve_or_create(
+        &self,
+        candidate_user: User,
+        candidate_identity: ExternalIdentity,
+    ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningRepositoryError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvisionExternalAccount {
+    pub provider: IdentityProvider,
+    pub external_account_id: String,
+    pub display_name: Option<String>,
+    pub created_at_unix_ms: i64,
+}
+
+#[derive(Debug, Error)]
+pub enum ExternalAccountProvisioningError {
+    #[error(transparent)]
+    Identity(#[from] IdentityError),
+    #[error(transparent)]
+    Domain(#[from] DomainError),
+    #[error("No se pudo resolver o crear la cuenta externa")]
+    Repository(#[from] ExternalAccountProvisioningRepositoryError),
+}
+
+pub struct ExternalAccountProvisioningApplication<R> {
+    repository: R,
+}
+
+impl<R> ExternalAccountProvisioningApplication<R>
+where
+    R: ExternalAccountProvisioningRepository,
+{
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+
+    pub async fn resolve_or_create(
+        &self,
+        command: ProvisionExternalAccount,
+    ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningError> {
+        let external_account_id = ExternalAccountId::new(command.external_account_id)?;
+        let display_name = normalize_external_display_name(command.display_name);
+        let user = User::new(display_name.clone(), command.created_at_unix_ms)?;
+        let identity = ExternalIdentity::new(
+            user.id(),
+            command.provider,
+            external_account_id,
+            Some(display_name),
+        )?;
+
+        self.repository
+            .resolve_or_create(user, identity)
+            .await
+            .map_err(ExternalAccountProvisioningError::from)
+    }
+}
+
+fn normalize_external_display_name(display_name: Option<String>) -> String {
+    let normalized = display_name
+        .unwrap_or_default()
+        .chars()
+        .filter(|character| !character.is_control())
+        .collect::<String>();
+    let normalized = normalized.trim();
+    let normalized = normalized.chars().take(100).collect::<String>();
+    let normalized = normalized.trim();
+
+    if normalized.is_empty() {
+        "Usuario GitHub".to_owned()
+    } else {
+        normalized.to_owned()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
