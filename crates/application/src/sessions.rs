@@ -548,25 +548,29 @@ mod tests {
 
     #[tokio::test]
     async fn rotates_refresh_credentials_and_rejects_old_access() {
-        let (app, _) = application();
-        let issued = app.create(user_id()).await;
-        if let Ok(issued) = issued {
+        let app_result = application();
+        assert!(app_result.is_some());
+        let Some((app, _)) = app_result else { return; };
+        let issued_result = app.create(user_id()).await;
+        assert!(issued_result.is_ok());
+        let Ok(issued) = issued_result else { return; };
             let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
             assert!(matches!(rotated, Ok(SessionRotationOutcome::Rotated(_))));
             if let Ok(SessionRotationOutcome::Rotated(next)) = rotated {
                 assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
                 assert!(matches!(app.authenticate(next.access_credential.expose_once()).await, Ok(Some(_))));
             }
-        } else {
-            assert!(false, "session creation should succeed");
         }
     }
 
     #[tokio::test]
     async fn refresh_reuse_revokes_the_session_family() {
-        let (app, _) = application();
-        let issued = app.create(user_id()).await;
-        if let Ok(issued) = issued {
+        let app_result = application();
+        assert!(app_result.is_some());
+        let Some((app, _)) = app_result else { return; };
+        let issued_result = app.create(user_id()).await;
+        assert!(issued_result.is_ok());
+        let Ok(issued) = issued_result else { return; };
             let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
             if let Ok(SessionRotationOutcome::Rotated(next)) = rotated {
                 assert!(matches!(
@@ -575,10 +579,8 @@ mod tests {
                 ));
                 assert!(matches!(app.authenticate(next.access_credential.expose_once()).await, Ok(None)));
             } else {
-                assert!(false, "refresh rotation should succeed");
+                assert!(matches!(rotated, Ok(SessionRotationOutcome::Rotated(_))));
             }
-        } else {
-            assert!(false, "session creation should succeed");
         }
     }
 
