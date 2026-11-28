@@ -310,10 +310,12 @@ where
         access_credential: &str,
     ) -> Result<Option<AuthenticatedPrincipal>, SessionError> {
         if access_credential.is_empty() { return Ok(None); }
+        let now = self.clock.now_unix_ms();
+        if now < 0 { return Err(SessionError::InvalidTimestamp); }
         let digest = self.credentials.digest(access_credential)
             .map_err(|_| SessionError::CredentialProvider)?;
         if digest.is_empty() { return Err(SessionError::InvalidCredentialDigest); }
-        let user_id = self.repository.authenticate_access(&digest, self.clock.now_unix_ms())
+        let user_id = self.repository.authenticate_access(&digest, now)
             .await.map_err(SessionError::Repository)?;
         Ok(user_id.map(AuthenticatedPrincipal::new))
     }
