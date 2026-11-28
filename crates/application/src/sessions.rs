@@ -400,8 +400,7 @@ mod tests {
 
     impl CredentialProvider for TestCredentials {
         fn generate(&self) -> Result<String, CredentialProviderError> {
-            let value = self.0.fetch_add(1, Ordering::SeqCst);
-            Ok(format!("test-secret-{value}"))
+            Ok(format!("test-secret-{}", self.0.fetch_add(1, Ordering::SeqCst)))
         }
 
         fn digest(&self, credential: &str) -> Result<Vec<u8>, CredentialProviderError> {
@@ -424,7 +423,10 @@ mod tests {
         async fn insert(&self, session: SessionRecord) -> Result<(), SessionRepositoryError> {
             let mut sessions = self.sessions.lock().map_err(|_| SessionRepositoryError::Unavailable)?;
             if sessions.contains_key(&session.id) { return Err(SessionRepositoryError::Conflict); }
-            sessions.insert(session.id, StoredSession { record: session, consumed_refresh_digests: Vec::new() });
+            sessions.insert(session.id, StoredSession {
+                record: session,
+                consumed_refresh_digests: Vec::new(),
+            });
             Ok(())
         }
 
@@ -449,25 +451,25 @@ mod tests {
             now_unix_ms: i64,
         ) -> Result<RepositoryRotationResult, SessionRepositoryError> {
             let mut sessions = self.sessions.lock().map_err(|_| SessionRepositoryError::Unavailable)?;
-            let current = sessions.iter().find(|(_, stored)| stored.record.digests.refresh() == presented_digest)
+            let current_id = sessions.iter()
+                .find(|(_, stored)| stored.record.digests.refresh() == presented_digest)
                 .map(|(id, _)| *id);
 
-            if let Some(id) = current {
-                let Some(stored) = sessions.get_mut(&id) else { return Ok(RepositoryRotationResult::Invalid); };
-                let record = &stored.record;
-                if record.revoked_at_unix_ms.is_some()
-                    || now_unix_ms >= record.refresh_expires_at_unix_ms
-                    || now_unix_ms >= record.absolute_expires_at_unix_ms
-                    || replacement.access_expires_at_unix_ms > record.absolute_expires_at_unix_ms
+            if let Some(id) = current_id {
+                let Some(stored) = sessions.get_mut(&id) else {
+                    return Ok(RepositoryRotationResult::Invalid);
+                };
+                if stored.record.revoked_at_unix_ms.is_some()
+                    || now_unix_ms >= stored.record.refresh_expires_at_unix_ms
+                    || now_unix_ms >= stored.record.absolute_expires_at_unix_ms
                 {
                     return Ok(RepositoryRotationResult::Invalid);
                 }
-
-                stored.consumed_refresh_digests.push(presented_digest.to_vec());
-                let mut updated = record.clone();
+                let mut updated = stored.record.clone();
                 if !updated.apply_rotation(replacement, now_unix_ms) {
                     return Ok(RepositoryRotationResult::Invalid);
                 }
+                stored.consumed_refresh_digests.push(presented_digest.to_vec());
                 stored.record = updated.clone();
                 return Ok(RepositoryRotationResult::Rotated(updated));
             }
@@ -496,105 +498,115 @@ mod tests {
                 return Ok(false);
             };
             for stored in sessions.values_mut().filter(|stored| stored.record.family_id == family_id) {
-                stored.record.revoked_at_unix_ms = Some(now_unix_ms);
+                stored.record.revoke_at(now_unix_ms);
             }
             Ok(true)
         }
     }
 
-    fn application() -> Option<(
-        SessionApplication<InMemorySessionRepository, TestClock, TestCredentials>,
-        TestClock,
-    )> {
+    type TestApplication = SessionApplication<InMemorySessionRepository, TestClock, TestCredentials>;
+
+    fn application() -> Option<(TestApplication, TestClock)> {
         let clock = TestClock::default();
         clock.set(1_000);
-        let app = SessionApplication::new(
+        let result = SessionApplication::new(
             InMemorySessionRepository::default(),
             clock.clone(),
             TestCredentials::default(),
-            SessionPolicy { access_lifetime_ms: 100, refresh_lifetime_ms: 500, absolute_lifetime_ms: 1_000 },
+            SessionPolicy {
+                access_lifetime_ms: 100,
+                refresh_lifetime_ms: 500,
+                absolute_lifetime_ms: 1_000,
+            },
         );
-        app.ok().map(|app| (app, clock))
+        result.ok().map(|app| (app, clock))
     }
 
     fn user_id() -> UserId { UserId(Uuid::from_u128(42)) }
 
+    async fn create_session(app: &TestApplication) -> Option<IssuedSession> {
+        let result = app.create(user_id()).await;
+        assert!(result.is_ok());
+        result.ok()
+    }
+
     #[tokio::test]
     async fn creates_session_and_authenticates_principal() {
-        let app_result = application();
-        assert!(app_result.is_some());
-        let Some((app, _)) = app_result else { return; };
-        let issued = app.create(user_id()).await;
-        assert!(issued.is_ok());
-        if let Ok(issued) = issued {
-            let principal = app.authenticate(issued.access_credential.expose_once()).await;
-            assert!(matches!(principal, Ok(Some(principal)) if principal.user_id() == user_id()));
-        }
+        let result = application();
+        assert!(result.is_some());
+        let Some((app, _)) = result else { return; };
+        let Some(issued) = create_session(&app).await else { return; };
+        let principal = app.authenticate(issued.access_credential.expose_once()).await;
+        assert!(matches!(principal, Ok(Some(principal)) if principal.user_id() == user_id()));
     }
 
     #[tokio::test]
     async fn rejects_expired_access_credentials() {
-        let app_result = application();
-        assert!(app_result.is_some());
-        let Some((app, clock)) = app_result else { return; };
-        let issued = app.create(user_id()).await;
-        if let Ok(issued) = issued {
-            clock.set(1_100);
-            assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
-        } else {
-            assert!(issued.is_ok());
-        }
+        let result = application();
+        assert!(result.is_some());
+        let Some((app, clock)) = result else { return; };
+        let Some(issued) = create_session(&app).await else { return; };
+        clock.set(1_100);
+        assert!(matches!(
+            app.authenticate(issued.access_credential.expose_once()).await,
+            Ok(None)
+        ));
     }
 
     #[tokio::test]
-    async fn rotates_refresh_credentials_and_rejects_old_access() {
-        let app_result = application();
-        assert!(app_result.is_some());
-        let Some((app, _)) = app_result else { return; };
-        let issued_result = app.create(user_id()).await;
-        assert!(issued_result.is_ok());
-        let Ok(issued) = issued_result else { return; };
-            let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
-            assert!(matches!(rotated, Ok(SessionRotationOutcome::Rotated(_))));
-            if let Ok(SessionRotationOutcome::Rotated(next)) = rotated {
-                assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
-                assert!(matches!(app.authenticate(next.access_credential.expose_once()).await, Ok(Some(_))));
-            }
-        }
+    async fn rotates_credentials_and_invalidates_the_previous_access_token() {
+        let result = application();
+        assert!(result.is_some());
+        let Some((app, _)) = result else { return; };
+        let Some(issued) = create_session(&app).await else { return; };
+        let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
+        assert!(matches!(rotated, Ok(SessionRotationOutcome::Rotated(_))));
+        let Ok(SessionRotationOutcome::Rotated(next)) = rotated else { return; };
+        assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
+        assert!(matches!(app.authenticate(next.access_credential.expose_once()).await, Ok(Some(_))));
     }
 
     #[tokio::test]
-    async fn refresh_reuse_revokes_the_session_family() {
-        let app_result = application();
-        assert!(app_result.is_some());
-        let Some((app, _)) = app_result else { return; };
-        let issued_result = app.create(user_id()).await;
-        assert!(issued_result.is_ok());
-        let Ok(issued) = issued_result else { return; };
-            let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
-            if let Ok(SessionRotationOutcome::Rotated(next)) = rotated {
-                assert!(matches!(
-                    app.rotate(issued.refresh_credential.expose_once()).await,
-                    Ok(SessionRotationOutcome::ReuseDetected)
-                ));
-                assert!(matches!(app.authenticate(next.access_credential.expose_once()).await, Ok(None)));
-            } else {
-                assert!(matches!(rotated, Ok(SessionRotationOutcome::Rotated(_))));
-            }
-        }
+    async fn refresh_reuse_revokes_the_entire_session_family() {
+        let result = application();
+        assert!(result.is_some());
+        let Some((app, _)) = result else { return; };
+        let Some(issued) = create_session(&app).await else { return; };
+        let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
+        assert!(matches!(rotated, Ok(SessionRotationOutcome::Rotated(_))));
+        let Ok(SessionRotationOutcome::Rotated(next)) = rotated else { return; };
+        assert!(matches!(
+            app.rotate(issued.refresh_credential.expose_once()).await,
+            Ok(SessionRotationOutcome::ReuseDetected)
+        ));
+        assert!(matches!(app.authenticate(next.access_credential.expose_once()).await, Ok(None)));
+    }
+
+    #[tokio::test]
+    async fn concurrent_refresh_attempts_detect_reuse_and_revoke_the_family() {
+        let result = application();
+        assert!(result.is_some());
+        let Some((app, _)) = result else { return; };
+        let Some(issued) = create_session(&app).await else { return; };
+        let credential = issued.refresh_credential.expose_once().to_owned();
+        let (first, second) = tokio::join!(app.rotate(&credential), app.rotate(&credential));
+        let outcomes = [first, second];
+        assert!(outcomes.iter().any(|outcome| matches!(outcome, Ok(SessionRotationOutcome::Rotated(_)))));
+        assert!(outcomes.iter().any(|outcome| matches!(outcome, Ok(SessionRotationOutcome::ReuseDetected))));
     }
 
     #[tokio::test]
     async fn revoke_invalidates_access_and_refresh_credentials() {
-        let (app, _) = application();
-        let issued = app.create(user_id()).await;
-        if let Ok(issued) = issued {
-            assert!(matches!(app.revoke(issued.session_id).await, Ok(true)));
-            assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
-            assert!(matches!(app.rotate(issued.refresh_credential.expose_once()).await, Ok(SessionRotationOutcome::Invalid)));
-        } else {
-            assert!(false, "session creation should succeed");
-        }
+        let result = application();
+        assert!(result.is_some());
+        let Some((app, _)) = result else { return; };
+        let Some(issued) = create_session(&app).await else { return; };
+        assert!(matches!(app.revoke(issued.session_id).await, Ok(true)));
+        assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
+        assert!(matches!(
+            app.rotate(issued.refresh_credential.expose_once()).await,
+            Ok(SessionRotationOutcome::Invalid)
+        ));
     }
 
     #[tokio::test]
@@ -603,7 +615,11 @@ mod tests {
             InMemorySessionRepository::default(),
             TestClock::default(),
             TestCredentials::default(),
-            SessionPolicy { access_lifetime_ms: 500, refresh_lifetime_ms: 100, absolute_lifetime_ms: 1_000 },
+            SessionPolicy {
+                access_lifetime_ms: 500,
+                refresh_lifetime_ms: 100,
+                absolute_lifetime_ms: 1_000,
+            },
         );
         assert!(matches!(result, Err(SessionError::InvalidPolicy)));
     }
