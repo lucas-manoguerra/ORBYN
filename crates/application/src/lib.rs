@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use orbyn_domain::{DomainError, Organization, OrganizationId, UserId};
+use orbyn_domain::{DomainError, Organization, OrganizationId, User, UserId};
 use orbyn_identity::{ExternalAccountId, ExternalIdentity, IdentityError, IdentityProvider};
 use thiserror::Error;
 
@@ -149,6 +149,110 @@ where
             .find_by_external_account(provider, &external_account_id)
             .await
             .map_err(ExternalIdentityApplicationError::from)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ExternalAccountProvisioningRepositoryError {
+    #[error("El almacenamiento de cuentas externas no está disponible")]
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvisionedExternalAccount {
+    user: User,
+    identity: ExternalIdentity,
+    created: bool,
+}
+
+impl ProvisionedExternalAccount {
+    pub fn user(&self) -> &User {
+        &self.user
+    }
+
+    pub fn identity(&self) -> &ExternalIdentity {
+        &self.identity
+    }
+
+    pub fn created(&self) -> bool {
+        self.created
+    }
+}
+
+#[async_trait]
+pub trait ExternalAccountProvisioningRepository: Send + Sync {
+    async fn resolve_or_create(
+        &self,
+        candidate_user: User,
+        candidate_identity: ExternalIdentity,
+    ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningRepositoryError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvisionExternalAccount {
+    pub provider: IdentityProvider,
+    pub external_account_id: String,
+    pub display_name: Option<String>,
+    pub created_at_unix_ms: i64,
+}
+
+#[derive(Debug, Error)]
+pub enum ExternalAccountProvisioningError {
+    #[error(transparent)]
+    Identity(#[from] IdentityError),
+    #[error(transparent)]
+    Domain(#[from] DomainError),
+    #[error("No se pudo resolver o crear la cuenta externa")]
+    Repository(#[from] ExternalAccountProvisioningRepositoryError),
+}
+
+pub struct ExternalAccountProvisioningApplication<R> {
+    repository: R,
+}
+
+impl<R> ExternalAccountProvisioningApplication<R>
+where
+    R: ExternalAccountProvisioningRepository,
+{
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+
+    pub async fn resolve_or_create(
+        &self,
+        command: ProvisionExternalAccount,
+    ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningError> {
+        let external_account_id = ExternalAccountId::new(command.external_account_id)?;
+        let display_name = normalize_external_display_name(command.display_name);
+        let user = User::new(display_name.clone(), command.created_at_unix_ms)?;
+        let identity = ExternalIdentity::new(
+            user.id(),
+            command.provider,
+            external_account_id,
+            Some(display_name),
+        )?;
+
+        self.repository
+            .resolve_or_create(user, identity)
+            .await
+            .map_err(ExternalAccountProvisioningError::from)
+    }
+}
+
+fn normalize_external_display_name(display_name: Option<String>) -> String {
+    let normalized = display_name
+        .unwrap_or_default()
+        .chars()
+        .filter(|character| !character.is_control())
+        .collect::<String>();
+    let normalized = normalized.trim();
+    let normalized = normalized.chars().take(100).collect::<String>();
+    let normalized = normalized.trim();
+
+    if normalized.is_empty() {
+        "Usuario GitHub".to_owned()
+    } else {
+        normalized.to_owned()
     }
 }
 
@@ -405,5 +509,211 @@ mod tests {
                 ExternalIdentityRepositoryError::Unavailable
             ))
         ));
+    }
+}
+
+#[cfg(test)]
+mod external_account_provisioning_tests {
+    use super::*;
+    use std::sync::Mutex;
+    use uuid::Uuid;
+
+    #[derive(Default)]
+    struct InMemoryExternalAccountProvisioningRepository {
+        accounts: Mutex<Vec<(User, ExternalIdentity)>>,
+    }
+
+    #[async_trait]
+    impl ExternalAccountProvisioningRepository for InMemoryExternalAccountProvisioningRepository {
+        async fn resolve_or_create(
+            &self,
+            candidate_user: User,
+            candidate_identity: ExternalIdentity,
+        ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningRepositoryError>
+        {
+            let mut accounts = self
+                .accounts
+                .lock()
+                .map_err(|_| ExternalAccountProvisioningRepositoryError::Unavailable)?;
+
+            if let Some((user, identity)) = accounts.iter().find(|(_, identity)| {
+                identity.provider() == candidate_identity.provider()
+                    && identity.external_account_id() == candidate_identity.external_account_id()
+            }) {
+                return Ok(ProvisionedExternalAccount {
+                    user: user.clone(),
+                    identity: identity.clone(),
+                    created: false,
+                });
+            }
+
+            accounts.push((candidate_user.clone(), candidate_identity.clone()));
+
+            Ok(ProvisionedExternalAccount {
+                user: candidate_user,
+                identity: candidate_identity,
+                created: true,
+            })
+        }
+    }
+
+    struct FailingExternalAccountProvisioningRepository;
+
+    #[async_trait]
+    impl ExternalAccountProvisioningRepository for FailingExternalAccountProvisioningRepository {
+        async fn resolve_or_create(
+            &self,
+            _candidate_user: User,
+            _candidate_identity: ExternalIdentity,
+        ) -> Result<ProvisionedExternalAccount, ExternalAccountProvisioningRepositoryError>
+        {
+            Err(ExternalAccountProvisioningRepositoryError::Unavailable)
+        }
+    }
+
+    fn command() -> ProvisionExternalAccount {
+        ProvisionExternalAccount {
+            provider: IdentityProvider::GitHub,
+            external_account_id: "987654".to_owned(),
+            display_name: Some("orbyn-dev".to_owned()),
+            created_at_unix_ms: 1_000,
+        }
+    }
+
+    #[tokio::test]
+    async fn provisions_a_user_and_external_identity_together() {
+        let application = ExternalAccountProvisioningApplication::new(
+            InMemoryExternalAccountProvisioningRepository::default(),
+        );
+
+        let result = application.resolve_or_create(command()).await;
+
+        assert!(matches!(result, Ok(account) if account.created()
+            && account.user().display_name().as_str() == "orbyn-dev"
+            && account.identity().user_id() == account.user().id()));
+    }
+
+    #[tokio::test]
+    async fn resolves_an_existing_external_identity_without_creating_a_second_user() {
+        let application = ExternalAccountProvisioningApplication::new(
+            InMemoryExternalAccountProvisioningRepository::default(),
+        );
+
+        let first = application.resolve_or_create(command()).await;
+        let second = application.resolve_or_create(command()).await;
+
+        assert!(matches!((first, second), (Ok(first), Ok(second))
+            if first.created()
+                && !second.created()
+                && first.user().id() == second.user().id()
+                && first.identity().id() == second.identity().id()));
+    }
+
+    #[tokio::test]
+    async fn concurrent_first_logins_resolve_to_the_same_internal_user() {
+        let application = ExternalAccountProvisioningApplication::new(
+            InMemoryExternalAccountProvisioningRepository::default(),
+        );
+
+        let (first, second) = tokio::join!(
+            application.resolve_or_create(command()),
+            application.resolve_or_create(command())
+        );
+
+        assert!(matches!((first, second), (Ok(first), Ok(second))
+            if first.user().id() == second.user().id()
+                && first.created() != second.created()));
+    }
+
+    #[tokio::test]
+    async fn uses_a_safe_fallback_for_missing_or_invalid_display_names() {
+        let application = ExternalAccountProvisioningApplication::new(
+            InMemoryExternalAccountProvisioningRepository::default(),
+        );
+        let mut input = command();
+        input.display_name = Some(" \n ".to_owned());
+
+        let result = application.resolve_or_create(input).await;
+
+        assert!(matches!(result, Ok(account)
+            if account.user().display_name().as_str() == "Usuario GitHub"
+                && account.identity().display_name() == Some("Usuario GitHub")));
+    }
+
+    #[tokio::test]
+    async fn truncates_external_display_names_to_the_domain_limit() {
+        let application = ExternalAccountProvisioningApplication::new(
+            InMemoryExternalAccountProvisioningRepository::default(),
+        );
+        let mut input = command();
+        input.display_name = Some("x".repeat(150));
+
+        let result = application.resolve_or_create(input).await;
+
+        assert!(matches!(result, Ok(account)
+            if account.user().display_name().as_str().chars().count() == 100));
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_external_account_ids_before_repository_access() {
+        let application = ExternalAccountProvisioningApplication::new(
+            InMemoryExternalAccountProvisioningRepository::default(),
+        );
+        let mut input = command();
+        input.external_account_id = "  ".to_owned();
+
+        let result = application.resolve_or_create(input).await;
+
+        assert!(matches!(
+            result,
+            Err(ExternalAccountProvisioningError::Identity(
+                IdentityError::InvalidExternalAccountId
+            ))
+        ));
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_timestamps_before_repository_access() {
+        let application = ExternalAccountProvisioningApplication::new(
+            InMemoryExternalAccountProvisioningRepository::default(),
+        );
+        let mut input = command();
+        input.created_at_unix_ms = -1;
+
+        let result = application.resolve_or_create(input).await;
+
+        assert!(matches!(
+            result,
+            Err(ExternalAccountProvisioningError::Domain(
+                DomainError::InvalidTimestamp
+            ))
+        ));
+    }
+
+    #[tokio::test]
+    async fn translates_repository_failures() {
+        let application = ExternalAccountProvisioningApplication::new(
+            FailingExternalAccountProvisioningRepository,
+        );
+
+        let result = application.resolve_or_create(command()).await;
+
+        assert!(matches!(
+            result,
+            Err(ExternalAccountProvisioningError::Repository(
+                ExternalAccountProvisioningRepositoryError::Unavailable
+            ))
+        ));
+    }
+
+    #[test]
+    fn generated_candidate_users_have_distinct_ids() {
+        let first = User::new("uno", 1_000);
+        let second = User::new("dos", 1_000);
+
+        assert!(matches!((first, second), (Ok(first), Ok(second))
+            if first.id() != second.id()
+                && first.id() != UserId(Uuid::nil())
+                && second.id() != UserId(Uuid::nil())));
     }
 }
