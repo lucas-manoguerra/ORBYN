@@ -1,5 +1,6 @@
 {
   "orbyn-desktop": [],
+  "orbyn-application": ["orbyn-domain"],
   "orbyn-server": [],
   "orbyn-node": [],
   "orbyn-domain": [],
