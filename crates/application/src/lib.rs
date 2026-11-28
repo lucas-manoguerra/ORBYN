@@ -12,10 +12,7 @@ pub enum OrganizationRepositoryError {
 
 #[async_trait]
 pub trait OrganizationRepository: Send + Sync {
-    async fn insert(
-        &self,
-        organization: Organization,
-    ) -> Result<(), OrganizationRepositoryError>;
+    async fn insert(&self, organization: Organization) -> Result<(), OrganizationRepositoryError>;
 
     async fn find_by_id(
         &self,
@@ -147,9 +144,7 @@ mod tests {
 
     #[tokio::test]
     async fn creates_and_retrieves_an_organization() {
-        let application = OrganizationApplication::new(
-            InMemoryOrganizationRepository::default(),
-        );
+        let application = OrganizationApplication::new(InMemoryOrganizationRepository::default());
         let owner_user_id = UserId(Uuid::new_v4());
         let created = application
             .create(command(owner_user_id))
