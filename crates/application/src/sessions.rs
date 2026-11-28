@@ -149,9 +149,7 @@ impl SessionCredentialRotation {
         access_expires_at_unix_ms: i64,
         refresh_expires_at_unix_ms: i64,
     ) -> Result<Self, SessionError> {
-        if access_expires_at_unix_ms < 0
-            || refresh_expires_at_unix_ms < access_expires_at_unix_ms
-        {
+        if access_expires_at_unix_ms < 0 || refresh_expires_at_unix_ms < access_expires_at_unix_ms {
             return Err(SessionError::InvalidSessionTransition);
         }
         Ok(Self {
