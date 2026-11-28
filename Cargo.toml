@@ -4,6 +4,7 @@ members = [
   "apps/desktop",
   "apps/server",
   "apps/node",
+  "crates/application",
   "crates/domain",
   "crates/events",
   "crates/orchestration",
