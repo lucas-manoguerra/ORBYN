@@ -1,42 +1,30 @@
 use async_trait::async_trait;
 use orbyn_domain::UserId;
 use orbyn_identity::AuthenticatedPrincipal;
-use std::fmt;
+use std::{collections::HashMap, fmt, sync::Mutex};
 use thiserror::Error;
 use uuid::Uuid;
 
-/// Identificador interno de una sesión ORBYN.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SessionId(Uuid);
 
 impl SessionId {
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
+    pub fn as_uuid(self) -> Uuid { self.0 }
 }
 
-/// Identificador de la familia de renovación de una sesión.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SessionFamilyId(Uuid);
 
 impl SessionFamilyId {
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
+    pub fn as_uuid(self) -> Uuid { self.0 }
 }
 
-/// Credencial opaca entregada una sola vez al cliente.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SecretCredential(String);
 
 impl SecretCredential {
-    fn new(value: String) -> Self {
-        Self(value)
-    }
-
-    pub fn expose_once(&self) -> &str {
-        &self.0
-    }
+    fn new(value: String) -> Self { Self(value) }
+    pub fn expose_once(&self) -> &str { &self.0 }
 }
 
 impl fmt::Debug for SecretCredential {
@@ -45,7 +33,6 @@ impl fmt::Debug for SecretCredential {
     }
 }
 
-/// Hashes/verificadores persistibles. Nunca contienen la credencial en claro.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredentialDigests {
     access: Vec<u8>,
@@ -60,16 +47,10 @@ impl CredentialDigests {
         Ok(Self { access, refresh })
     }
 
-    pub fn access(&self) -> &[u8] {
-        &self.access
-    }
-
-    pub fn refresh(&self) -> &[u8] {
-        &self.refresh
-    }
+    pub fn access(&self) -> &[u8] { &self.access }
+    pub fn refresh(&self) -> &[u8] { &self.refresh }
 }
 
-/// Registro persistible de sesión. Solo almacena hashes de credenciales.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionRecord {
     id: SessionId,
@@ -93,29 +74,27 @@ impl SessionRecord {
     pub fn refresh_expires_at_unix_ms(&self) -> i64 { self.refresh_expires_at_unix_ms }
     pub fn absolute_expires_at_unix_ms(&self) -> i64 { self.absolute_expires_at_unix_ms }
     pub fn revoked_at_unix_ms(&self) -> Option<i64> { self.revoked_at_unix_ms }
+}
 
-    /// Reemplaza hashes y expiraciones durante una rotación atómica.
-    /// El adaptador debe conservar la credencial anterior como consumida.
-    pub fn with_rotated_credentials(
-        &self,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionCredentialRotation {
+    digests: CredentialDigests,
+    access_expires_at_unix_ms: i64,
+    refresh_expires_at_unix_ms: i64,
+}
+
+impl SessionCredentialRotation {
+    pub fn new(
         digests: CredentialDigests,
         access_expires_at_unix_ms: i64,
         refresh_expires_at_unix_ms: i64,
     ) -> Result<Self, SessionError> {
-        if self.revoked_at_unix_ms.is_some()
-            || access_expires_at_unix_ms <= self.created_at_unix_ms
+        if access_expires_at_unix_ms < 0
             || refresh_expires_at_unix_ms < access_expires_at_unix_ms
-            || refresh_expires_at_unix_ms > self.absolute_expires_at_unix_ms
         {
             return Err(SessionError::InvalidSessionTransition);
         }
-
-        Ok(Self {
-            digests,
-            access_expires_at_unix_ms,
-            refresh_expires_at_unix_ms,
-            ..self.clone()
-        })
+        Ok(Self { digests, access_expires_at_unix_ms, refresh_expires_at_unix_ms })
     }
 }
 
@@ -138,8 +117,9 @@ impl SessionPolicy {
     }
 }
 
-/// Abstracción criptográfica: producción debe usar CSPRNG y un digest seguro
-/// para secretos aleatorios de alta entropía. No implementar con PRNG casero.
+/// Producción debe implementar generación con CSPRNG y un digest criptográfico.
+/// Para secretos aleatorios de alta entropía, un hash rápido (p. ej. SHA-256
+/// con separación de dominio) es apropiado; nunca usar un PRNG casero.
 pub trait CredentialProvider: Send + Sync {
     fn generate(&self) -> Result<String, CredentialProviderError>;
     fn digest(&self, credential: &str) -> Result<Vec<u8>, CredentialProviderError>;
@@ -149,7 +129,6 @@ pub trait CredentialProvider: Send + Sync {
 #[error("No se pudo procesar la credencial")]
 pub struct CredentialProviderError;
 
-/// Fuente de tiempo sustituible en pruebas.
 pub trait SessionClock: Send + Sync {
     fn now_unix_ms(&self) -> i64;
 }
@@ -163,13 +142,20 @@ pub enum SessionRepositoryError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RefreshRotationResult {
+pub enum RepositoryRotationResult {
     Rotated(SessionRecord),
     Invalid,
     ReuseDetected,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionRotationOutcome {
+    Rotated(IssuedSession),
+    Invalid,
+    ReuseDetected,
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct IssuedSession {
     pub session_id: SessionId,
     pub access_credential: SecretCredential,
@@ -179,55 +165,59 @@ pub struct IssuedSession {
     pub absolute_expires_at_unix_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SessionError {
-    InvalidPolicy,
-    InvalidTimestamp,
-    InvalidCredentialDigest,
-    InvalidSessionTransition,
-    CredentialProvider,
-    Repository(SessionRepositoryError),
-}
-
-impl fmt::Display for SessionError {
+impl fmt::Debug for IssuedSession {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidPolicy => formatter.write_str("la política de sesión no es válida"),
-            Self::InvalidTimestamp => formatter.write_str("la marca de tiempo no es válida"),
-            Self::InvalidCredentialDigest => formatter.write_str("el verificador de credencial no es válido"),
-            Self::InvalidSessionTransition => formatter.write_str("la transición de sesión no es válida"),
-            Self::CredentialProvider => formatter.write_str("no se pudo procesar la credencial"),
-            Self::Repository(_) => formatter.write_str("no se pudo completar la operación de sesión"),
-        }
+        formatter.debug_struct("IssuedSession")
+            .field("session_id", &self.session_id)
+            .field("access_credential", &"[REDACTED]")
+            .field("refresh_credential", &"[REDACTED]")
+            .field("access_expires_at_unix_ms", &self.access_expires_at_unix_ms)
+            .field("refresh_expires_at_unix_ms", &self.refresh_expires_at_unix_ms)
+            .field("absolute_expires_at_unix_ms", &self.absolute_expires_at_unix_ms)
+            .finish()
     }
 }
 
-impl std::error::Error for SessionError {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum SessionError {
+    #[error("La política de sesión no es válida")]
+    InvalidPolicy,
+    #[error("La marca de tiempo no es válida")]
+    InvalidTimestamp,
+    #[error("El verificador de credencial no es válido")]
+    InvalidCredentialDigest,
+    #[error("La transición de sesión no es válida")]
+    InvalidSessionTransition,
+    #[error("No se pudo procesar la credencial")]
+    CredentialProvider,
+    #[error("No se pudo completar la operación de sesión")]
+    Repository(SessionRepositoryError),
+}
 
 #[async_trait]
 pub trait SessionRepository: Send + Sync {
     async fn insert(&self, session: SessionRecord) -> Result<(), SessionRepositoryError>;
 
-    /// Debe verificar digest, revocación y expiración en una sola operación.
+    /// Verifica digest, revocación y expiración en una sola operación.
     async fn authenticate_access(
         &self,
         access_digest: &[u8],
         now_unix_ms: i64,
     ) -> Result<Option<UserId>, SessionRepositoryError>;
 
-    /// Operación transaccional indivisible:
-    /// - rota el digest vigente y registra el anterior como consumido;
-    /// - ante repetición de un digest consumido, revoca toda la familia;
-    /// - rechaza credenciales desconocidas, expiradas o revocadas.
-    /// No se permite implementar esta operación como lecturas/escrituras separadas.
+    /// Operación transaccional indivisible. El adaptador debe localizar el
+    /// digest vigente, guardar el anterior como consumido y sustituir ambos
+    /// digests. Si el digest ya fue consumido, revoca toda la familia. La
+    /// detección de repetición y la revocación deben compartir la transacción.
+    /// La expiración absoluta nunca puede extenderse con una rotación.
     async fn rotate_refresh(
         &self,
         presented_digest: &[u8],
-        replacement: SessionRecord,
+        replacement: SessionCredentialRotation,
         now_unix_ms: i64,
-    ) -> Result<RefreshRotationResult, SessionRepositoryError>;
+    ) -> Result<RepositoryRotationResult, SessionRepositoryError>;
 
-    /// Revoca sesión y familia en una sola operación.
+    /// Revoca la sesión y su familia de renovación de forma atómica.
     async fn revoke(
         &self,
         session_id: SessionId,
@@ -254,12 +244,7 @@ where
         credentials: G,
         policy: SessionPolicy,
     ) -> Result<Self, SessionError> {
-        Ok(Self {
-            repository,
-            clock,
-            credentials,
-            policy: policy.validate()?,
-        })
+        Ok(Self { repository, clock, credentials, policy: policy.validate()? })
     }
 
     pub async fn create(&self, user_id: UserId) -> Result<IssuedSession, SessionError> {
@@ -273,14 +258,13 @@ where
         let absolute_expiry = now.checked_add(self.policy.absolute_lifetime_ms)
             .ok_or(SessionError::InvalidTimestamp)?;
 
-        let access = SecretCredential::new(self.credentials.generate().map_err(|_| SessionError::CredentialProvider)?);
-        let refresh = SecretCredential::new(self.credentials.generate().map_err(|_| SessionError::CredentialProvider)?);
-        let digests = self.digest_pair(&access, &refresh)?;
+        let access = self.new_credential()?;
+        let refresh = self.new_credential()?;
         let session = SessionRecord {
             id: SessionId(Uuid::new_v4()),
             family_id: SessionFamilyId(Uuid::new_v4()),
             user_id,
-            digests,
+            digests: self.digest_pair(&access, &refresh)?,
             created_at_unix_ms: now,
             access_expires_at_unix_ms: access_expiry,
             refresh_expires_at_unix_ms: refresh_expiry,
@@ -314,7 +298,7 @@ where
     pub async fn rotate(
         &self,
         refresh_credential: &str,
-    ) -> Result<RefreshRotationResult, SessionError> {
+    ) -> Result<SessionRotationOutcome, SessionError> {
         let now = self.clock.now_unix_ms();
         if now < 0 { return Err(SessionError::InvalidTimestamp); }
 
@@ -322,35 +306,28 @@ where
             .map_err(|_| SessionError::CredentialProvider)?;
         if presented_digest.is_empty() { return Err(SessionError::InvalidCredentialDigest); }
 
-        let access = SecretCredential::new(self.credentials.generate().map_err(|_| SessionError::CredentialProvider)?);
-        let refresh = SecretCredential::new(self.credentials.generate().map_err(|_| SessionError::CredentialProvider)?);
-        let digests = self.digest_pair(&access, &refresh)?;
-        let access_expiry = now.checked_add(self.policy.access_lifetime_ms)
-            .ok_or(SessionError::InvalidTimestamp)?;
-        let refresh_expiry = now.checked_add(self.policy.refresh_lifetime_ms)
-            .ok_or(SessionError::InvalidTimestamp)?;
-
-        // El adaptador conserva SessionId, familia y UserId originales; los
-        // valores de identidad del candidato son marcadores no autoritativos.
-        let replacement = SessionRecord {
-            id: SessionId(Uuid::nil()),
-            family_id: SessionFamilyId(Uuid::nil()),
-            user_id: UserId(Uuid::nil()),
-            digests,
-            created_at_unix_ms: now,
-            access_expires_at_unix_ms: access_expiry,
-            refresh_expires_at_unix_ms: refresh_expiry,
-            absolute_expires_at_unix_ms: i64::MAX,
-            revoked_at_unix_ms: None,
-        };
+        let access = self.new_credential()?;
+        let refresh = self.new_credential()?;
+        let replacement = SessionCredentialRotation::new(
+            self.digest_pair(&access, &refresh)?,
+            now.checked_add(self.policy.access_lifetime_ms).ok_or(SessionError::InvalidTimestamp)?,
+            now.checked_add(self.policy.refresh_lifetime_ms).ok_or(SessionError::InvalidTimestamp)?,
+        )?;
 
         match self.repository.rotate_refresh(&presented_digest, replacement, now)
             .await.map_err(SessionError::Repository)? {
-            RefreshRotationResult::Rotated(record) => Ok(RefreshRotationResult::Rotated(SessionRecord {
-                digests: CredentialDigests::new(Vec::new(), Vec::new())?,
-                ..record
-            }).map_rotated_credentials(access, refresh)),
-            other => Ok(other),
+            RepositoryRotationResult::Rotated(record) => {
+                Ok(SessionRotationOutcome::Rotated(IssuedSession {
+                    session_id: record.id,
+                    access_credential: access,
+                    refresh_credential: refresh,
+                    access_expires_at_unix_ms: record.access_expires_at_unix_ms,
+                    refresh_expires_at_unix_ms: record.refresh_expires_at_unix_ms,
+                    absolute_expires_at_unix_ms: record.absolute_expires_at_unix_ms,
+                }))
+            }
+            RepositoryRotationResult::Invalid => Ok(SessionRotationOutcome::Invalid),
+            RepositoryRotationResult::ReuseDetected => Ok(SessionRotationOutcome::ReuseDetected),
         }
     }
 
@@ -358,6 +335,11 @@ where
         let now = self.clock.now_unix_ms();
         if now < 0 { return Err(SessionError::InvalidTimestamp); }
         self.repository.revoke(session_id, now).await.map_err(SessionError::Repository)
+    }
+
+    fn new_credential(&self) -> Result<SecretCredential, SessionError> {
+        self.credentials.generate().map(SecretCredential::new)
+            .map_err(|_| SessionError::CredentialProvider)
     }
 
     fn digest_pair(
@@ -373,16 +355,234 @@ where
     }
 }
 
-// The rotated response is represented separately so the newly issued secrets
-// are returned only after the repository confirms the atomic rotation.
-impl RefreshRotationResult {
-    fn map_rotated_credentials(self, access: SecretCredential, refresh: SecretCredential) -> Self {
-        match self {
-            Self::Rotated(record) => {
-                let _ = (access, refresh);
-                Self::Rotated(record)
-            }
-            other => other,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, atomic::{AtomicI64, AtomicUsize, Ordering}};
+
+    #[derive(Clone, Default)]
+    struct TestClock(Arc<AtomicI64>);
+
+    impl TestClock {
+        fn set(&self, value: i64) { self.0.store(value, Ordering::SeqCst); }
+    }
+
+    impl SessionClock for TestClock {
+        fn now_unix_ms(&self) -> i64 { self.0.load(Ordering::SeqCst) }
+    }
+
+    #[derive(Clone, Default)]
+    struct TestCredentials(Arc<AtomicUsize>);
+
+    impl CredentialProvider for TestCredentials {
+        fn generate(&self) -> Result<String, CredentialProviderError> {
+            let value = self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(format!("test-secret-{value}"))
         }
+
+        fn digest(&self, credential: &str) -> Result<Vec<u8>, CredentialProviderError> {
+            Ok(credential.as_bytes().to_vec())
+        }
+    }
+
+    #[derive(Default)]
+    struct StoredSession {
+        record: SessionRecord,
+        consumed_refresh_digests: Vec<Vec<u8>>,
+    }
+
+    #[derive(Default)]
+    struct InMemorySessionRepository {
+        sessions: Mutex<HashMap<SessionId, StoredSession>>,
+    }
+
+    #[async_trait]
+    impl SessionRepository for InMemorySessionRepository {
+        async fn insert(&self, session: SessionRecord) -> Result<(), SessionRepositoryError> {
+            let mut sessions = self.sessions.lock().map_err(|_| SessionRepositoryError::Unavailable)?;
+            if sessions.contains_key(&session.id) { return Err(SessionRepositoryError::Conflict); }
+            sessions.insert(session.id, StoredSession { record: session, consumed_refresh_digests: Vec::new() });
+            Ok(())
+        }
+
+        async fn authenticate_access(
+            &self,
+            access_digest: &[u8],
+            now_unix_ms: i64,
+        ) -> Result<Option<UserId>, SessionRepositoryError> {
+            let sessions = self.sessions.lock().map_err(|_| SessionRepositoryError::Unavailable)?;
+            Ok(sessions.values().find(|stored| {
+                stored.record.digests.access() == access_digest
+                    && stored.record.revoked_at_unix_ms.is_none()
+                    && now_unix_ms < stored.record.access_expires_at_unix_ms
+                    && now_unix_ms < stored.record.absolute_expires_at_unix_ms
+            }).map(|stored| stored.record.user_id))
+        }
+
+        async fn rotate_refresh(
+            &self,
+            presented_digest: &[u8],
+            replacement: SessionCredentialRotation,
+            now_unix_ms: i64,
+        ) -> Result<RepositoryRotationResult, SessionRepositoryError> {
+            let mut sessions = self.sessions.lock().map_err(|_| SessionRepositoryError::Unavailable)?;
+            let current = sessions.iter().find(|(_, stored)| stored.record.digests.refresh() == presented_digest)
+                .map(|(id, _)| *id);
+
+            if let Some(id) = current {
+                let Some(stored) = sessions.get_mut(&id) else { return Ok(RepositoryRotationResult::Invalid); };
+                let record = &stored.record;
+                if record.revoked_at_unix_ms.is_some()
+                    || now_unix_ms >= record.refresh_expires_at_unix_ms
+                    || now_unix_ms >= record.absolute_expires_at_unix_ms
+                    || replacement.access_expires_at_unix_ms > record.absolute_expires_at_unix_ms
+                {
+                    return Ok(RepositoryRotationResult::Invalid);
+                }
+
+                stored.consumed_refresh_digests.push(presented_digest.to_vec());
+                let mut updated = record.clone();
+                updated.digests = replacement.digests;
+                updated.access_expires_at_unix_ms = replacement.access_expires_at_unix_ms;
+                updated.refresh_expires_at_unix_ms = replacement.refresh_expires_at_unix_ms
+                    .min(record.absolute_expires_at_unix_ms);
+                if updated.refresh_expires_at_unix_ms < updated.access_expires_at_unix_ms {
+                    return Ok(RepositoryRotationResult::Invalid);
+                }
+                stored.record = updated.clone();
+                return Ok(RepositoryRotationResult::Rotated(updated));
+            }
+
+            let reused_family = sessions.values().find(|stored| {
+                stored.consumed_refresh_digests.iter().any(|digest| digest == presented_digest)
+            }).map(|stored| stored.record.family_id);
+
+            if let Some(family_id) = reused_family {
+                for stored in sessions.values_mut().filter(|stored| stored.record.family_id == family_id) {
+                    stored.record.revoked_at_unix_ms = Some(now_unix_ms);
+                }
+                return Ok(RepositoryRotationResult::ReuseDetected);
+            }
+
+            Ok(RepositoryRotationResult::Invalid)
+        }
+
+        async fn revoke(
+            &self,
+            session_id: SessionId,
+            now_unix_ms: i64,
+        ) -> Result<bool, SessionRepositoryError> {
+            let mut sessions = self.sessions.lock().map_err(|_| SessionRepositoryError::Unavailable)?;
+            let Some(family_id) = sessions.get(&session_id).map(|stored| stored.record.family_id) else {
+                return Ok(false);
+            };
+            for stored in sessions.values_mut().filter(|stored| stored.record.family_id == family_id) {
+                stored.record.revoked_at_unix_ms = Some(now_unix_ms);
+            }
+            Ok(true)
+        }
+    }
+
+    fn application() -> (
+        SessionApplication<InMemorySessionRepository, TestClock, TestCredentials>,
+        TestClock,
+    ) {
+        let clock = TestClock::default();
+        clock.set(1_000);
+        let app = SessionApplication::new(
+            InMemorySessionRepository::default(),
+            clock.clone(),
+            TestCredentials::default(),
+            SessionPolicy { access_lifetime_ms: 100, refresh_lifetime_ms: 500, absolute_lifetime_ms: 1_000 },
+        );
+        match app {
+            Ok(app) => (app, clock),
+            Err(_) => unreachable!(),
+        }
+    }
+
+    fn user_id() -> UserId { UserId(Uuid::from_u128(42)) }
+
+    #[tokio::test]
+    async fn creates_session_and_authenticates_principal() {
+        let (app, _) = application();
+        let issued = app.create(user_id()).await;
+        assert!(issued.is_ok());
+        if let Ok(issued) = issued {
+            let principal = app.authenticate(issued.access_credential.expose_once()).await;
+            assert!(matches!(principal, Ok(Some(principal)) if principal.user_id() == user_id()));
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_expired_access_credentials() {
+        let (app, clock) = application();
+        let issued = app.create(user_id()).await;
+        if let Ok(issued) = issued {
+            clock.set(1_100);
+            assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
+        } else {
+            assert!(false, "session creation should succeed");
+        }
+    }
+
+    #[tokio::test]
+    async fn rotates_refresh_credentials_and_rejects_old_access() {
+        let (app, _) = application();
+        let issued = app.create(user_id()).await;
+        if let Ok(issued) = issued {
+            let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
+            assert!(matches!(rotated, Ok(SessionRotationOutcome::Rotated(_))));
+            if let Ok(SessionRotationOutcome::Rotated(next)) = rotated {
+                assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
+                assert!(matches!(app.authenticate(next.access_credential.expose_once()).await, Ok(Some(_))));
+            }
+        } else {
+            assert!(false, "session creation should succeed");
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_reuse_revokes_the_session_family() {
+        let (app, _) = application();
+        let issued = app.create(user_id()).await;
+        if let Ok(issued) = issued {
+            let rotated = app.rotate(issued.refresh_credential.expose_once()).await;
+            if let Ok(SessionRotationOutcome::Rotated(next)) = rotated {
+                assert!(matches!(
+                    app.rotate(issued.refresh_credential.expose_once()).await,
+                    Ok(SessionRotationOutcome::ReuseDetected)
+                ));
+                assert!(matches!(app.authenticate(next.access_credential.expose_once()).await, Ok(None)));
+            } else {
+                assert!(false, "refresh rotation should succeed");
+            }
+        } else {
+            assert!(false, "session creation should succeed");
+        }
+    }
+
+    #[tokio::test]
+    async fn revoke_invalidates_access_and_refresh_credentials() {
+        let (app, _) = application();
+        let issued = app.create(user_id()).await;
+        if let Ok(issued) = issued {
+            assert!(matches!(app.revoke(issued.session_id).await, Ok(true)));
+            assert!(matches!(app.authenticate(issued.access_credential.expose_once()).await, Ok(None)));
+            assert!(matches!(app.rotate(issued.refresh_credential.expose_once()).await, Ok(SessionRotationOutcome::Invalid)));
+        } else {
+            assert!(false, "session creation should succeed");
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_session_policy() {
+        let result = SessionApplication::new(
+            InMemorySessionRepository::default(),
+            TestClock::default(),
+            TestCredentials::default(),
+            SessionPolicy { access_lifetime_ms: 500, refresh_lifetime_ms: 100, absolute_lifetime_ms: 1_000 },
+        );
+        assert!(matches!(result, Err(SessionError::InvalidPolicy)));
     }
 }
