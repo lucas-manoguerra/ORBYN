@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use orbyn_domain::{DomainError, Organization, OrganizationId, UserId};
+use orbyn_identity::{ExternalAccountId, ExternalIdentity, IdentityError, IdentityProvider};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -72,10 +73,6 @@ where
     }
 }
 
-
-use orbyn_identity::{
-    ExternalAccountId, ExternalIdentity, IdentityError, IdentityProvider,
-};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ExternalIdentityRepositoryError {
@@ -412,5 +409,4 @@ mod tests {
             ))
         ));
     }
-
 }
